@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d10" />
+<title>RoadLimit Prototype</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#0b0d10; color:#f4f4f4; min-height:100vh; }
+  main { max-width:720px; margin:0 auto; padding:18px 16px calc(28px + env(safe-area-inset-bottom)); }
+  .top { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+  h1 { font-size:20px; margin:0; }
+  .pill { font-size:12px; padding:6px 9px; border-radius:999px; background:#171a20; }
+  .card { margin-top:14px; background:#13161b; border:1px solid #272b33; border-radius:18px; padding:18px; }
+  .speed { text-align:center; padding:14px 0 20px; }
+  .speed-value { font-size:112px; line-height:.9; font-weight:800; letter-spacing:-5px; }
+  .unit { font-size:22px; font-weight:700; opacity:.8; margin-top:10px; }
+  .label { font-size:12px; text-transform:uppercase; letter-spacing:.12em; opacity:.55; }
+  .row { display:flex; justify-content:space-between; gap:12px; padding:9px 0; border-top:1px solid #242830; }
+  .row:first-child { border-top:0; }
+  .muted { opacity:.6; }
+  .value { text-align:right; max-width:65%; overflow-wrap:anywhere; }
+  button { border:0; width:100%; padding:15px 18px; margin-top:14px; border-radius:14px; background:#f1f1f1; color:#0b0d10; font-weight:800; font-size:16px; }
+  button.secondary { background:#1b1f26; color:#fff; }
+  .warning { color:#ffbf69; }
+  .good { color:#7de2a2; }
+  .bad { color:#ff7b7b; }
+  #log { max-height:140px; overflow:auto; font:12px ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; opacity:.75; }
+  .tiny { font-size:11px; line-height:1.4; opacity:.55; }
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><h1>RoadLimit Prototype</h1><div id="status" class="pill">Idle</div></div>
+
+  <section class="card speed">
+    <div class="label">Current speed limit</div>
+    <div id="limit" class="speed-value">—</div>
+    <div class="unit">MPH</div>
+  </section>
+
+  <section class="card">
+    <div class="row"><span class="muted">Your speed</span><span id="yourSpeed" class="value">—</span></div>
+    <div class="row"><span class="muted">Road</span><span id="road" class="value">—</span></div>
+    <div class="row"><span class="muted">Road type</span><span id="roadType" class="value">—</span></div>
+    <div class="row"><span class="muted">GPS accuracy</span><span id="accuracy" class="value">—</span></div>
+    <div class="row"><span class="muted">Last map lookup</span><span id="updated" class="value">—</span></div>
+  </section>
+
+  <button id="start">START GPS</button>
+  <button id="stop" class="secondary" disabled>STOP</button>
+
+  <section class="card">
+    <div class="label">Diagnostics</div>
+    <div id="log">Waiting to start…</div>
+    <p class="tiny">Prototype data source: OpenStreetMap via Overpass. Speed limits may be missing or outdated; treat this as a test instrument, not authoritative road-sign data.</p>
+  </section>
+</main>
+
+<script>
+const state = {
+  watchId: null,
+  lastFix: null,
+  candidates: [],
+  current: null,
+  lastLookupAt: 0,
+  lookupTimer: null,
+  requestInFlight: false,
+  cache: new Map(),
+  lastGoodLimit: null
+};
+
+const $ = id => document.getElementById(id);
+function log(s) {
+  const t = new Date().toLocaleTimeString();
+  $('log').textContent = `[${t}] ${s}\n` + $('log').textContent.slice(0, 5000);
+}
+function setStatus(s, cls='') { $('status').textContent=s; $('status').className='pill '+cls; }
+function mph(mps) { return (mps == null || !isFinite(mps)) ? null : mps * 2.23693629205; }
+function normAngle(a) { return (a % 360 + 360) % 360; }
+function angleDiff(a,b) { let d=Math.abs(normAngle(a)-normAngle(b)); return d>180?360-d:d; }
+function fmtSpeed(mps) { const x=mph(mps); return x==null?'—':`${Math.round(x)} mph`; }
+function parseMaxspeed(raw) {
+  if (!raw) return null;
+  if (typeof raw !== 'string') raw=String(raw);
+  raw=raw.trim().toLowerCase();
+  // Common OSM forms: 45, 45 mph, 70 km/h.
+  if (/^signals$|^variable$|^none$|^walk$|^national$|^urban$/.test(raw)) return null;
+  const n=parseFloat(raw.replace(',', '.'));
+  if (!isFinite(n)) return null;
+  if (/km\/?h|kph/.test(raw)) return n * 0.621371192;
+  return n;
+}
+function bearingBetween(a,b) {
+  const lat1=a.lat*Math.PI/180, lat2=b.lat*Math.PI/180;
+  const dLon=(b.lon-a.lon)*Math.PI/180;
+  const y=Math.sin(dLon)*Math.cos(lat2);
+  const x=Math.cos(lat1)*Math.sin(lat2)-Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon);
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;
+}
+function distanceMeters(a,b) {
+  const R=6371000, p1=a.lat*Math.PI/180,p2=b.lat*Math.PI/180;
+  const dp=(b.lat-a.lat)*Math.PI/180, dl=(b.lon-a.lon)*Math.PI/180;
+  const x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(x)));
+}
+function pointSegmentDistance(p,a,b) {
+  // Equirectangular projection, accurate enough for short OSM segments.
+  const lat0=((a.lat+b.lat+p.lat)/3)*Math.PI/180;
+  const kx=111320*Math.cos(lat0), ky=110540;
+  const ax=a.lon*kx, ay=a.lat*ky, bx=b.lon*kx, by=b.lat*ky, px=p.lon*kx, py=p.lat*ky;
+  const dx=bx-ax, dy=by-ay;
+  const t=Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/(dx*dx+dy*dy || 1)));
+  const q={lat: (ay+t*dy)/ky, lon:(ax+t*dx)/kx};
+  return {d:distanceMeters(p,q), t, q};
+}
+function roadHeading(a,b) { return bearingBetween(a,b); }
+function nearestOnWay(pos, way) {
+  let best=null;
+  const g=way.geometry||[];
+  for(let i=0;i<g.length-1;i++) {
+    const a={lat:g[i].lat,lon:g[i].lon}, b={lat:g[i+1].lat,lon:g[i+1].lon};
+    const r=pointSegmentDistance(pos,a,b);
+    if(!best || r.d<best.d) best={...r, segment:i, heading:roadHeading(a,b)};
+  }
+  return best;
+}
+function getWayLabel(w) {
+  const t=w.tags||{};
+  return t.name || t.ref || t.destination || `OSM way ${w.id}`;
+}
+function chooseWay(pos, ways) {
+  const gpsHeading=pos.heading;
+  const scored=[];
+  for(const w of ways) {
+    const n=nearestOnWay(pos,w);
+    if(!n) continue;
+    let score=n.d;
+    if(gpsHeading != null && pos.speed != null && mph(pos.speed)>5) {
+      const diff=angleDiff(gpsHeading,n.heading);
+      score += Math.min(80, diff) * 0.7;
+    }
+    scored.push({w,n,score});
+  }
+  scored.sort((a,b)=>a.score-b.score);
+  return scored[0]||null;
+}
+function bbox(lat,lon,r) {
+  // r in meters; conservative latitude/longitude conversion.
+  const dLat=r/111320, dLon=r/(111320*Math.cos(lat*Math.PI/180));
+  return {s:lat-dLat,n:lat+dLat,w:lon-dLon,e:lon+dLon};
+}
+async function fetchWays(pos) {
+  const b=bbox(pos.lat,pos.lon,90);
+  const q=`[out:json][timeout:10];way[highway](${b.s},${b.w},${b.n},${b.e});out tags geom;`;
+  const urls=[
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter'
+  ];
+  let lastErr=null;
+  for(const u of urls) {
+    try {
+      const r=await fetch(u,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body:q});
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data=await r.json();
+      return data.elements||[];
+    } catch(e) { lastErr=e; }
+  }
+  throw lastErr||new Error('Map lookup failed');
+}
+async function updateRoad(pos) {
+  if(state.requestInFlight) return;
+  const now=Date.now();
+  // Refresh only after moving ~35 m or every 15 sec.
+  if(state.current && now-state.lastLookupAt<15000 && distanceMeters(pos,state.lastFix||pos)<35) return;
+  state.requestInFlight=true;
+  try {
+    setStatus('Looking up road…','warning');
+    const ways=await fetchWays(pos);
+    state.candidates=ways;
+    const picked=chooseWay(pos,ways);
+    if(!picked) throw new Error('No road geometry near GPS fix');
+    state.current=picked;
+    state.lastLookupAt=Date.now();
+    const tags=picked.w.tags||{};
+    const limit=parseMaxspeed(tags.maxspeed);
+    const name=getWayLabel(picked.w);
+    const highway=tags.highway||'—';
+    $('road').textContent=name;
+    $('roadType').textContent=highway;
+    $('updated').textContent=new Date().toLocaleTimeString();
+    if(limit != null) {
+      state.lastGoodLimit=limit;
+      $('limit').textContent=Math.round(limit);
+      $('limit').className='speed-value good';
+      log(`${name}: ${Math.round(limit)} mph; match ${Math.round(picked.n.d)} m; heading ${picked.n.heading.toFixed(0)}°`);
+    } else {
+      $('limit').textContent='—';
+      $('limit').className='speed-value warning';
+      log(`${name}: no explicit maxspeed tag; cannot safely infer a limit`);
+    }
+    setStatus('GPS active','good');
+  } catch(e) {
+    setStatus('Map lookup failed','bad');
+    log('Lookup error: '+e.message);
+  } finally { state.requestInFlight=false; }
+}
+function onPosition(p) {
+  const c=p.coords;
+  const pos={lat:c.latitude,lon:c.longitude,accuracy:c.accuracy,speed:c.speed,heading:c.heading};
+  state.lastFix=pos;
+  $('accuracy').textContent = isFinite(c.accuracy) ? `${Math.round(c.accuracy)} m` : '—';
+  $('yourSpeed').textContent = fmtSpeed(c.speed);
+  if(c.accuracy && c.accuracy>35) {
+    setStatus('Weak GPS','warning');
+  }
+  updateRoad(pos);
+}
+function onError(e) { setStatus('GPS error','bad'); log(`GPS ${e.code}: ${e.message}`); }
+$('start').onclick=()=>{
+  if(!navigator.geolocation){ alert('This browser does not provide GPS location.'); return; }
+  state.watchId=navigator.geolocation.watchPosition(onPosition,onError,{enableHighAccuracy:true,maximumAge:2000,timeout:15000});
+  $('start').disabled=true; $('stop').disabled=false; setStatus('Starting…','warning'); log('GPS watch started');
+};
+$('stop').onclick=()=>{
+  if(state.watchId!=null) navigator.geolocation.clearWatch(state.watchId);
+  state.watchId=null; $('start').disabled=false; $('stop').disabled=true; setStatus('Idle'); log('GPS stopped');
+};
+</script>
+</body>
+</html>
