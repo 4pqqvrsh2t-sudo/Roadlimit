@@ -1,0 +1,51 @@
+<!doctype html><html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000"><link rel="manifest" href="manifest.json">
+<title>RoadLimit</title>
+<style>
+html,body{margin:0;width:100%;height:100%;background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif}
+body{overflow:hidden}.screen{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+#home{flex-direction:column;text-align:center;padding:25px}h1{font-size:42px;margin:0 0 8px}
+p{opacity:.7;line-height:1.4;max-width:560px}button{border:0;border-radius:16px;padding:16px 24px;margin:6px;font-size:18px;font-weight:700;background:#fff;color:#000}
+.secondary{background:#222;color:#fff}.danger{background:#b3261e;color:#fff}
+#drive{display:none;flex-direction:column;position:relative}#limit{font-size:36vw;font-weight:850;line-height:.8;letter-spacing:-.07em}
+#unit{font-size:9vw;font-weight:750;margin-top:20px}#road{font-size:5vw;margin-top:35px;max-width:90%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#confidence{font-size:13px;opacity:.65;margin-top:8px}#status{position:fixed;bottom:18px;left:10px;right:10px;text-align:center;font-size:13px;opacity:.65}
+#stop{position:fixed;top:calc(env(safe-area-inset-top) + 12px);right:12px;padding:10px 15px;font-size:14px}
+#review{display:none;position:fixed;inset:0;background:#080808;z-index:5;padding:calc(env(safe-area-inset-top) + 20px) 18px 24px;overflow:auto}
+.card{background:#171717;border:1px solid #333;border-radius:18px;padding:16px;margin:10px 0}.big{font-size:30px;font-weight:800}.badge{font-size:12px;opacity:.65}.row{display:flex;gap:6px;flex-wrap:wrap}
+</style></head><body>
+<section id="home" class="screen"><h1>RoadLimit</h1>
+<p>High-accuracy GPS road matching, mapped speed limits, drive recording, and post-drive sign verification.</p>
+<button id="start">Start Driving</button><button class="secondary" id="reviewOld">Review Last Drive</button>
+<p style="font-size:12px">Prototype only. Posted signs and official limits always take priority.</p></section>
+<section id="drive" class="screen"><button id="stop" class="danger">Finish</button>
+<div id="limit">—</div><div id="unit">MPH</div><div id="road">Finding road…</div><div id="confidence">Waiting for GPS…</div></section>
+<section id="review"><h2>Drive review</h2><div id="summary"></div><div id="candidates"></div>
+<div class="row"><button id="close" class="secondary">Done</button><button id="clear" class="danger">Delete drive data</button></div>
+<p style="font-size:13px;opacity:.65">Mapped sign candidates come from OpenStreetMap. Verify them against the actual sign before saving a correction.</p></section>
+<div id="status">GPS inactive</div>
+<script>
+const $=x=>document.getElementById(x), EP=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
+let watch=null,recording=false,track=[],last={lat:null,lon:null,t:0},lastLimit=null,lastWay=null,stable=0,cache=new Map(),signs=[];
+const dist=(a,b,c,d)=>{let R=6371000,p=Math.PI/180,x=(c-a)*p*Math.cos((a+b)*p/2),y=(d-b)*p;return Math.hypot(x,y)*R};
+const bear=(a,b,c,d)=>{let p=Math.PI/180,y1=a*p,y2=c*p,dl=(d-b)*p,y=Math.sin(dl)*Math.cos(y2),x=Math.cos(y1)*Math.sin(y2)-Math.sin(y1)*Math.cos(y2)*Math.cos(dl);return(Math.atan2(y,x)*180/Math.PI+360)%360};
+const ad=(a,b)=>{let d=Math.abs(a-b)%360;return d>180?360-d:d};
+function seg(px,py,ax,ay,bx,by){let R=6371000,p=Math.PI/180,co=Math.cos(py*p),x=(px-ax)*p*R*co,y=(py-ay)*p*R,x2=(bx-ax)*p*R*co,y2=(by-ay)*p*R,t=(x*x2+y*y2)/(x2*x2+y2*y2||1);t=Math.max(0,Math.min(1,t));return Math.hypot(x-x2*t,y-y2*t)}
+function speed(v){if(v==null)return null;let m=String(v).match(/(\d+(?:\.\d+)?)\s*(mph|mi\/h|km\/h|kph)?/i);if(!m)return null;let n=+m[1],u=(m[2]||'').toLowerCase();if(u==='km/h'||u==='kph')n*=.621371;return Math.round(n)}
+function say(s){if(!speechSynthesis)return;speechSynthesis.cancel();let u=new SpeechSynthesisUtterance(s);u.rate=.95;u.volume=1;speechSynthesis.speak(u)}
+async function oq(q){for(let e of EP)try{let r=await fetch(e,{method:'POST',body:q});if(r.ok)return r.json()}catch(e){}throw Error()}
+async function roads(lat,lon){let k=lat.toFixed(3)+','+lon.toFixed(3);if(cache.has(k))return cache.get(k);let d=.003,q=`[out:json][timeout:12];(way["highway"]["maxspeed"](${lat-d},${lon-d},${lat+d},${lon+d});way["highway"]["maxspeed:forward"](${lat-d},${lon-d},${lat+d},${lon+d});way["highway"]["maxspeed:backward"](${lat-d},${lon-d},${lat+d},${lon+d}););out tags geom;`,x=await oq(q);cache.set(k,x.elements);if(cache.size>15)cache.delete(cache.keys().next().value);return x.elements}
+function choose(ws,p){let z=null;for(let w of ws){let g=w.geometry||[];for(let i=0;i<g.length-1;i++){let a=g[i],b=g[i+1],d=seg(p.lat,p.lon,a.lat,a.lon,b.lat,b.lon),br=bear(a.lat,a.lon,b.lat,b.lon),pen=p.heading==null?0:.9*Math.min(ad(p.heading,br),ad(p.heading,(br+180)%360)),cont=lastWay&&String(lastWay.id)===String(w.id)?-18:0,s=d+pen+cont;if(!z||s<z.s)z={w,i,d,br,s}}}return z}
+function dirspeed(w,p,z){let t=w.tags,f=speed(t['maxspeed:forward']),b=speed(t['maxspeed:backward']),n=speed(t.maxspeed);if(f!=null||b!=null){if(p.heading!=null){let df=ad(p.heading,z.br),db=ad(p.heading,(z.br+180)%360);return df<=db?(f??n):(b??n)}}return n}
+function set(v,r,c){$('limit').textContent=v;$('road').textContent=r;$('confidence').textContent=c}
+async function update(pos){let c=pos.coords,p={lat:c.latitude,lon:c.longitude,heading:c.heading,speed:c.speed,accuracy:c.accuracy};if(recording)track.push({...p,t:Date.now()});$('status').textContent=`GPS active • ±${Math.round(c.accuracy||0)} m • ${track.length} points`;let moved=last.lat==null?999:dist(last.lat,last.lon,p.lat,p.lon);if(Date.now()-last.t<2500&&moved<35)return;last={lat:p.lat,lon:p.lon,t:Date.now()};try{let z=choose(await roads(p.lat,p.lon),p);if(!z){if(lastLimit!=='~35'){if(lastLimit!=null)say('Speed limit, approximately 35 miles per hour');lastLimit='~35'}set('~35','Road not mapped • estimated','Estimated');return}let n=dirspeed(z.w,p,z),name=z.w.tags.name||z.w.tags.ref||'Current road';if(n!=null){if(lastLimit!==n)stable++;else stable=2;if(stable>=2){if(lastLimit!==n)say(`Speed limit, ${n} miles per hour`);lastLimit=n;stable=2}set(lastLimit??n,name,'OSM mapped');}else{if(lastLimit!=='~35'){if(lastLimit!=null)say('Speed limit, approximately 35 miles per hour');lastLimit='~35'}set('~35',name+' • estimated','Estimated')}lastWay=z.w}catch(e){set(lastLimit??'~35','Map data unavailable • estimated',lastLimit?'Last known':'Estimated')}}
+function box(){if(!track.length)return null;let la=track.map(x=>x.lat),lo=track.map(x=>x.lon);return[Math.min(...la)-.0015,Math.min(...lo)-.0015,Math.max(...la)+.0015,Math.max(...lo)+.0015]}
+async function review(){let b=box();$('review').style.display='block';$('summary').innerHTML=`<div class="card"><div class="big">${track.length} GPS points</div><div class="badge">Stored locally on this phone.</div></div>`;$('candidates').innerHTML='<div class="card">Searching for mapped speed-limit signs near your drive…</div>';if(!b)return;try{let q=`[out:json][timeout:20];node["traffic_sign"~"maxspeed"](${b[0]},${b[1]},${b[2]},${b[3]});out tags;`,d=await oq(q);signs=d.elements.map(n=>({id:n.id,lat:n.lat,lon:n.lon,tags:n.tags||{}})).filter(s=>Math.min(...track.map(p=>dist(p.lat,p.lon,s.lat,s.lon)))<120);$('candidates').innerHTML=signs.length?'':'<div class="card">No mapped speed-limit signs were found near this route.</div>';signs.forEach((s,i)=>{let v=speed(s.tags.maxspeed),card=document.createElement('div');card.className='card';card.innerHTML=`<div class="badge">Candidate ${i+1}</div><div class="big">${v??'?'} MPH</div><div>about ${Math.round(Math.min(...track.map(p=>dist(p.lat,p.lon,s.lat,s.lon))))} m from your route</div><div class="row"><button>Verified</button><button class="secondary">Wrong</button><button class="secondary">Skip</button></div>`;let bs=card.querySelectorAll('button');bs[0].onclick=()=>save(s,v,card);bs[1].onclick=()=>card.remove();bs[2].onclick=()=>card.remove();$('candidates').appendChild(card)})}catch(e){$('candidates').innerHTML='<div class="card">Could not query mapped signs right now. Try Review Last Drive again later.</div>'}}
+function save(s,v,card){if(v==null)return;let a=JSON.parse(localStorage.getItem('roadlimitCorrections')||'[]');a.push({lat:s.lat,lon:s.lon,speed:v,time:new Date().toISOString(),source:'user verified'});localStorage.setItem('roadlimitCorrections',JSON.stringify(a));card.style.opacity=.35}
+$('start').onclick=()=>{if(!navigator.geolocation)return alert('GPS unavailable');recording=true;track=[];last={lat:null,lon:null,t:0};lastLimit=null;lastWay=null;stable=0;$('home').style.display='none';$('drive').style.display='flex';if(navigator.wakeLock)navigator.wakeLock.request('screen').catch(()=>{});watch=navigator.geolocation.watchPosition(update,e=>$('status').textContent='GPS error: '+e.message,{enableHighAccuracy:true,maximumAge:1000,timeout:10000})}
+$('stop').onclick=()=>{recording=false;if(watch!=null)navigator.geolocation.clearWatch(watch);localStorage.setItem('roadlimitTrack',JSON.stringify(track));$('drive').style.display='none';$('home').style.display='flex';review()}
+$('reviewOld').onclick=()=>{let x=localStorage.getItem('roadlimitTrack');if(!x)return alert('No recorded drive yet.');track=JSON.parse(x);review()}
+$('close').onclick=()=>{$('review').style.display='none'};$('clear').onclick=()=>{localStorage.removeItem('roadlimitTrack');localStorage.removeItem('roadlimitCorrections');track=[];$('review').style.display='none'}
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script></body></html>
