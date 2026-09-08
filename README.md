@@ -16,11 +16,11 @@ The matcher uses GPS accuracy, road geometry, travel heading, road continuity, a
 ## Major improvements in this build
 
 - Queries **all nearby drivable OSM roads**, not only roads that already have `maxspeed`. This fixes a major map-matching blind spot in earlier prototypes.
-- Adds the official **Spartanburg County SpeedLimit** street dataset, which includes local/private road geometry, one-way information, ownership, and coded 5–80 MPH values.
+- Adds the official **Spartanburg County SpeedLimit** street dataset, which includes local/private road geometry, one-way information, ownership, and coded speed-limit values including 15 MPH.
 - Adds the official statewide **SCDOT Speed Limits** layer as an independent source.
 - Queries the three road-data sources in parallel and caches geographic tiles for smooth updates.
-- Uses a direction/continuity-aware road matcher instead of a simple nearest-road lookup.
-- Filters weak GPS fixes before they can switch roads.
+- Uses a direction/continuity-aware road matcher instead of a simple nearest-road lookup, with turn-aware continuity so the prior road does not “stick” through intersections.
+- Filters weak GPS fixes before they can switch roads and uses corrected latitude/longitude distance math for smoothing and proximity checks.
 - Uses IndexedDB for road-tile cache and recorded drives.
 - Records the route, speed-limit transitions, source, confidence and road identity.
 - Interactive post-drive route review with speed-limit transition markers.
@@ -49,3 +49,7 @@ RoadLimit is a prototype. Road databases can be stale or incomplete. A physical 
 South Carolina statutory limits are context-dependent; `~35` is intentionally only a user-requested unknown estimate and is not presented as a legal default.
 
 See `ESP32_PROTOCOL.md` for future hardware integration.
+
+## Accuracy notes
+
+Cross-source limits are fused only when road geometry is parallel/colocated or the road names agree, reducing cross-street contamination at intersections. Name-only user corrections are intentionally local (120 m) so a correction on one speed zone is less likely to leak into another zone on the same road. OSM conditional speed tags are detected; if the condition cannot be safely evaluated in the PWA, the UI lowers confidence rather than pretending the base value is unconditionally correct.
