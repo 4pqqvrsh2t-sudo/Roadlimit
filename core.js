@@ -19,7 +19,7 @@ const URLS={
 let state={watch:null,recording:false,track:[],events:[],tile:null,lastRaw:null,lastSmooth:null,lastMatch:null,lastLimit:null,pendingLimit:null,pendingCount:0,lastAnnounce:0,lastDrive:null,reviewMap:null,hardware:null,sourceHealth:{},wake:null,fixSeq:0};
 const memTiles=new Map(),tilePromises=new Map();
 
-function meters(a,b,c,d){const R=6371000,p=Math.PI/180,x=(c-a)*p*Math.cos((a+c)*p/2),y=(d-b)*p;return Math.hypot(x,y)*R}
+function meters(a,b,c,d){const R=6371000,p=Math.PI/180,x=(d-b)*p*Math.cos((a+c)*p/2),y=(c-a)*p;return Math.hypot(x,y)*R}
 function bearing(a,b,c,d){const p=Math.PI/180,y1=a*p,y2=c*p,dl=(d-b)*p,y=Math.sin(dl)*Math.cos(y2),x=Math.cos(y1)*Math.sin(y2)-Math.sin(y1)*Math.cos(y2)*Math.cos(dl);return(Math.atan2(y,x)*180/Math.PI+360)%360}
 function angleDiff(a,b){let d=Math.abs(a-b)%360;return d>180?360-d:d}
 function normName(s=''){return s.toUpperCase().replace(/\b(STREET|ST|ROAD|RD|AVENUE|AVE|BOULEVARD|BLVD|HIGHWAY|HWY|DRIVE|DR|LANE|LN|COURT|CT|PARKWAY|PKWY)\b/g,'').replace(/[^A-Z0-9]/g,'').trim()}
