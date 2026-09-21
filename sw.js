@@ -1,5 +1,5 @@
-const CACHE='roadlimit-2026-09-07-v4';
-const SHELL=['./','./index.html','./styles.css','./core.js','./sources.js','./matcher.js','./review.js','./storage.js','./esp32-bridge.js','./manifest.json'];
+const CACHE='roadlimit-2026-09-21-hud-v1';
+const SHELL=['./','./index.html','./styles.css','./core.js','./sources.js','./matcher.js','./review.js','./storage.js','./esp32-bridge.js','./hud-bridge.js','./manifest.json'];
 self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)))});
 self.addEventListener('activate',e=>{e.waitUntil(Promise.all([caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))),self.clients.claim()]))});
 self.addEventListener('fetch',e=>{

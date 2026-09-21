@@ -12,9 +12,10 @@ function commitLimit(res,p){const key=res.mph==null?'unknown':String(res.mph);if
 function renderDrive(res,p){$('limit').textContent=res.display;$('roadName').textContent=res.road;$('sourcePill').textContent=`${res.source.toUpperCase()} • ${res.confidence.toUpperCase()}${res.conflict?' • CONFLICT':''}`;$('confidence').textContent=res.conflict?'Two map sources disagree — showing the higher-priority source':res.conditional?'Conditional speed rule mapped — showing the base limit':`${res.source} • GPS ±${Math.round(p.accuracy||0)} m`;$('gpsStatus').textContent=`GPS ±${Math.round(p.accuracy||0)} m`;$('trackStatus').textContent=`${state.track.length} points`}
 async function onPosition(pos){
  const seq=++state.fixSeq,c=pos.coords,raw={lat:c.latitude,lon:c.longitude,accuracy:c.accuracy,heading:Number.isFinite(c.heading)?c.heading:null,speed:Number.isFinite(c.speed)?c.speed:null,t:pos.timestamp||Date.now()};
+ if(window.RoadLimitHUD){RoadLimitHUD.sendFix(raw,state.lastLimit?.mph??null);}
  let rec=-1;if(state.recording){rec=state.track.length;state.track.push({...raw,accepted:raw.accuracy<=CFG.gpsRejectM,display:state.lastLimit?.display??'—'})}
  if(raw.accuracy>CFG.gpsRejectM){$('gpsStatus').textContent=`Weak GPS ±${Math.round(raw.accuracy)} m`;$('confidence').textContent='Holding the last matched road until GPS improves';return}
  const p=smoothFix(raw);p.heading=deriveHeading(p);state.lastRaw=raw;const tile=await loadTile(p.lat,p.lon);if(seq!==state.fixSeq)return;
- const pack=matchRoads(tile.roads,p);state.lastMatch=pack.best||state.lastMatch;const res=resolveLimit(pack,p);commitLimit(res,p);const shown=state.lastLimit||res;renderDrive(shown,p);
+ const pack=matchRoads(tile.roads,p);state.lastMatch=pack.best||state.lastMatch;const res=resolveLimit(pack,p);commitLimit(res,p);const shown=state.lastLimit||res;renderDrive(shown,p);if(window.RoadLimitHUD){RoadLimitHUD.sendFix(raw,shown.mph);}
  if(rec>=0&&state.track[rec])Object.assign(state.track[rec],{matchLat:p.lat,matchLon:p.lon,accepted:true,display:shown.display,mph:shown.mph,source:shown.source,road:shown.road,roadId:shown.roadId});state.lastSmooth=p
 }
