@@ -15,6 +15,6 @@ async function onPosition(pos){
  let rec=-1;if(state.recording){rec=state.track.length;state.track.push({...raw,accepted:raw.accuracy<=CFG.gpsRejectM,display:state.lastLimit?.display??'—'})}
  if(raw.accuracy>CFG.gpsRejectM){$('gpsStatus').textContent=`Weak GPS ±${Math.round(raw.accuracy)} m`;$('confidence').textContent='Holding the last matched road until GPS improves';return}
  const p=smoothFix(raw);p.heading=deriveHeading(p);state.lastRaw=raw;const tile=await loadTile(p.lat,p.lon);if(seq!==state.fixSeq)return;
- const pack=matchRoads(tile.roads,p);state.lastMatch=pack.best||state.lastMatch;const res=resolveLimit(pack,p);commitLimit(res,p);const shown=state.lastLimit||res;renderDrive(shown,p);
+ const pack=matchRoads(tile.roads,p);state.lastMatch=pack.best||state.lastMatch;const res=resolveLimit(pack,p);commitLimit(res,p);const shown=state.lastLimit||res;renderDrive(shown,p);if(window.RoadLimitHUD){RoadLimitHUD.sendFix(raw,shown.mph);}
  if(rec>=0&&state.track[rec])Object.assign(state.track[rec],{matchLat:p.lat,matchLon:p.lon,accepted:true,display:shown.display,mph:shown.mph,source:shown.source,road:shown.road,roadId:shown.roadId});state.lastSmooth=p
 }
