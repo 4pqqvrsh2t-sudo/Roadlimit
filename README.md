@@ -53,3 +53,12 @@ See `ESP32_PROTOCOL.md` for future hardware integration.
 ## Accuracy notes
 
 Cross-source limits are fused only when road geometry is parallel/colocated or the road names agree, reducing cross-street contamination at intersections. Name-only user corrections are intentionally local (120 m) so a correction on one speed zone is less likely to leak into another zone on the same road. OSM conditional speed tags are detected; if the condition cannot be safely evaluated in the PWA, the UI lowers confidence rather than pretending the base value is unconditionally correct.
+
+
+## Windshield HUD
+
+The repository now includes a direct phone-to-ESP32 windshield HUD in `hud/`.
+
+The RoadLimit page has a **Connect HUD** control. It sends live phone GPS speed plus the currently matched speed limit to the ESP32 over BLE. The ESP32 renders mirrored speed digits for windshield reflection and uses the physical left/right turn inputs to flash a thin green strip on the matching display edge.
+
+On iPhone, direct BLE from the web page requires a browser that exposes Web Bluetooth. See `hud/README.md` for setup and wiring.
