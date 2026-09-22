@@ -1,64 +1,71 @@
-# RoadLimit
+# Car-HUD
 
-RoadLimit is an iPhone-oriented PWA that displays the best available speed-limit estimate for the road currently being driven.
+Car-HUD is a small windshield-reflection speed display built around an ESP32 and a 2.0-inch ST7789 TFT.
 
-## Accuracy stack
+The phone does the data work:
 
-1. User-verified corrections saved after a drive.
-2. Spartanburg County official street-centerline `SpeedLimit` data.
-3. SCDOT statewide `Speed_Limits` regulatory road layer.
-4. Future ESP32 hardware input.
-5. OpenStreetMap `maxspeed`, including direction-specific tags.
-6. `~35` only when no reliable speed value is available. The tilde means **estimated/unknown**, not a legal default.
+- GPS provides current vehicle speed.
+- HERE Geocoding & Search provides the posted speed limit for the current road.
+- Bluetooth Low Energy sends current speed + speed limit to the ESP32.
+- The ESP32 only renders the HUD and reads the two physical turn-signal inputs.
 
-The matcher uses GPS accuracy, road geometry, travel heading, road continuity, and source priority. Poor GPS fixes are held rather than allowed to force a road switch.
+There is no custom road database in this repository.
 
-## Major improvements in this build
+## HUD behavior
 
-- Queries **all nearby drivable OSM roads**, not only roads that already have `maxspeed`. This fixes a major map-matching blind spot in earlier prototypes.
-- Adds the official **Spartanburg County SpeedLimit** street dataset, which includes local/private road geometry, one-way information, ownership, and coded speed-limit values including 15 MPH.
-- Adds the official statewide **SCDOT Speed Limits** layer as an independent source.
-- Queries the three road-data sources in parallel and caches geographic tiles for smooth updates.
-- Uses a direction/continuity-aware road matcher instead of a simple nearest-road lookup, with turn-aware continuity so the prior road does not “stick” through intersections.
-- Filters weak GPS fixes before they can switch roads and uses corrected latitude/longitude distance math for smoothing and proximity checks.
-- Uses IndexedDB for road-tile cache and recorded drives.
-- Records the route, speed-limit transitions, source, confidence and road identity.
-- Interactive post-drive route review with speed-limit transition markers.
-- Lets the user confirm or correct detected limits; corrections become the highest-priority source on later drives.
-- Searches for OSM-mapped physical maxspeed signs near the completed drive for verification.
-- Primes iOS speech on the Start button and debounces announcements.
-- Adds an ESP32 protocol/bridge without forcing a hardware transport yet.
+The display shows only the current speed on a black background.
 
-## Install on iPhone
+Color logic:
 
-This repository is designed for GitHub Pages.
+- 10 MPH or more over the limit: red.
+- 5 to 10 MPH over: fade orange -> red.
+- Less than 5 MPH over through less than 5 MPH under: orange.
+- Exactly 5 MPH under: blue.
+- 5 to 10 MPH under: fade blue -> purple.
+- 10 MPH or more under: purple.
+- Unknown speed limit: white.
 
-1. GitHub repository → **Settings → Pages**.
-2. Deploy from `main`, root folder.
-3. Open the HTTPS Pages URL in Safari on the iPhone.
-4. Allow precise location while using the site.
-5. Safari Share → **Add to Home Screen**.
-6. Launch RoadLimit and tap **Start Driving**.
+The digits are pre-mirrored in firmware so the windshield reflection reads normally.
 
-If an old version appears after an update, close and reopen the Home Screen app. The service worker is versioned and uses network-first navigation so new GitHub Pages deployments are picked up instead of being permanently stuck on an old cached HTML file.
+Turn signals are intentionally minimal:
 
-## Data and safety
+- left turn signal active: last 6 pixels on the left edge glow green.
+- right turn signal active: last 6 pixels on the right edge glow green.
+- hazards: both edges glow green.
+- the ESP32 follows the truck's real blink pulse instead of inventing a software blink rate.
 
-RoadLimit is a prototype. Road databases can be stale or incomplete. A physical regulatory sign can change before any digital source updates. Always follow posted signs and traffic laws.
+## Phone app
 
-South Carolina statutory limits are context-dependent; `~35` is intentionally only a user-requested unknown estimate and is not presented as a legal default.
+The root of this repository is a GitHub Pages-compatible phone app.
 
-See `ESP32_PROTOCOL.md` for future hardware integration.
+1. Open the page on the iPhone.
+2. Enter a HERE API key once. It is stored only in local browser storage.
+3. Tap **Connect HUD** and select the ESP32.
+4. Tap **Start** and allow precise location.
+5. Keep the phone app open while driving.
 
-## Accuracy notes
+The app uses HERE reverse geocoding with the `speedLimits` navigation attribute. If the speed-limit service is unavailable or returns no speed limit, the HUD keeps showing current speed in white instead of guessing.
 
-Cross-source limits are fused only when road geometry is parallel/colocated or the road names agree, reducing cross-street contamination at intersections. Name-only user corrections are intentionally local (120 m) so a correction on one speed zone is less likely to leak into another zone on the same road. OSM conditional speed tags are detected; if the condition cannot be safely evaluated in the PWA, the UI lowers confidence rather than pretending the base value is unconditionally correct.
+### iPhone Bluetooth note
 
+Safari does not expose Web Bluetooth. Use an iOS browser that supports Web Bluetooth, such as Bluefy, for the direct BLE connection.
 
-## Windshield HUD
+## Firmware
 
-The repository now includes a direct phone-to-ESP32 windshield HUD in `hud/`.
+Flash:
 
-The RoadLimit page has a **Connect HUD** control. It sends live phone GPS speed plus the currently matched speed limit to the ESP32 over BLE. The ESP32 renders mirrored speed digits for windshield reflection and uses the physical left/right turn inputs to flash a thin green strip on the matching display edge.
+`firmware/Car_HUD.ino`
 
-On iPhone, direct BLE from the web page requires a browser that exposes Web Bluetooth. See `hud/README.md` for setup and wiring.
+Target hardware:
+
+- ESP32 ESP-WROOM-32 development board.
+- 2.0-inch 240x320 ST7789 SPI TFT.
+- TFT pins: GND, VCC, SCL, SDA, RES/RST, DC, CS, BL/BLK.
+
+See `firmware/README.md` for the exact pin map.
+
+## Safety
+
+Do not connect a 12 V vehicle turn-signal wire directly to an ESP32 GPIO. Use a proper automotive input-conditioning or isolation circuit so the ESP32 receives safe 3.3 V logic.
+
+For first power-up, bench-test the ESP32 and display from USB before connecting anything to vehicle power.

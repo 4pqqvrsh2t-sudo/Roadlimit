@@ -1,11 +1,8 @@
 {
-  "name": "RoadLimit",
-  "short_name": "RoadLimit",
-  "description": "Live speed-limit prototype with official South Carolina road data and drive review.",
+  "name": "Car HUD",
+  "short_name": "Car HUD",
   "start_url": "./",
-  "scope": "./",
   "display": "standalone",
-  "background_color": "#050505",
-  "theme_color": "#050505",
-  "orientation": "portrait-primary"
+  "background_color": "#05070a",
+  "theme_color": "#05070a"
 }

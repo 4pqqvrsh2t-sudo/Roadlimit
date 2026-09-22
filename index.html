@@ -3,83 +3,51 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#050505">
+  <meta name="theme-color" content="#05070a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="RoadLimit">
-  <title>RoadLimit</title>
+  <meta name="apple-mobile-web-app-title" content="Car HUD">
+  <title>Car HUD</title>
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script defer src="esp32-bridge.js"></script>
-  <script defer src="hud-bridge.js"></script>
-  <script defer src="core.js"></script>
-  <script defer src="sources.js"></script>
-  <script defer src="matcher.js"></script>
-  <script defer src="review.js"></script>
-  <script defer src="storage.js"></script>
+  <script defer src="app.js"></script>
 </head>
 <body>
-  <main>
-    <section id="home" class="screen active">
-      <div class="home-wrap">
-        <div class="eyebrow">LIVE SPEED LIMIT</div>
-        <h1>RoadLimit</h1>
-        <p class="lead">Official South Carolina + Spartanburg County road data, OpenStreetMap fallback, direction-aware map matching, drive recording, and post-drive verification.</p>
-        <button id="startBtn" class="primary">Start Driving</button>
-        <button id="hudBtn" class="secondary">Connect HUD</button>
-        <p id="hudStatus" class="safety">HUD disconnected</p>
-        <button id="reviewBtn" class="secondary">Review Last Drive</button>
-        <button id="diagBtn" class="ghost">Data & diagnostics</button>
-        <p class="safety">Prototype aid only. Posted signs and official traffic controls take priority.</p>
+  <main class="shell">
+    <header>
+      <div class="eyebrow">WINDSHIELD DISPLAY</div>
+      <h1>Car HUD</h1>
+    </header>
+
+    <section class="readout">
+      <div id="speed" class="speed">--</div>
+      <div class="mph">MPH</div>
+      <div class="limit-row">
+        <span>LIMIT</span>
+        <strong id="limit">--</strong>
+      </div>
+      <div id="road" class="road">Waiting to start</div>
+    </section>
+
+    <section class="controls">
+      <label class="field">
+        <span>HERE API key</span>
+        <input id="apiKey" type="password" autocomplete="off" placeholder="Paste once">
+      </label>
+
+      <div class="buttons">
+        <button id="connectBtn">Connect HUD</button>
+        <button id="startBtn" class="primary">Start</button>
+      </div>
+
+      <div class="status-grid">
+        <div><span>GPS</span><strong id="gpsStatus">OFF</strong></div>
+        <div><span>HUD</span><strong id="bleStatus">OFF</strong></div>
+        <div><span>LIMIT DATA</span><strong id="limitStatus">OFF</strong></div>
       </div>
     </section>
 
-    <section id="drive" class="screen">
-      <button id="finishBtn" class="finish">Finish</button>
-      <div id="sourcePill" class="pill">ACQUIRING GPS</div>
-      <div id="limit" class="limit">—</div>
-      <div class="unit">MPH</div>
-      <div id="roadName" class="road">Finding road…</div>
-      <div id="confidence" class="confidence">Waiting for a high-quality GPS fix</div>
-      <div class="drive-footer">
-        <span id="gpsStatus">GPS inactive</span>
-        <span id="trackStatus">0 points</span>
-      </div>
-    </section>
-
-    <section id="review" class="overlay">
-      <div class="overlay-head">
-        <div><div class="eyebrow">DRIVE REVIEW</div><h2>Recorded route</h2></div>
-        <button id="closeReview" class="small secondary">Done</button>
-      </div>
-      <div id="reviewSummary" class="summary-grid"></div>
-      <div id="reviewMap" class="map"></div>
-      <div id="reviewEvents"></div>
-      <div id="signReview"></div>
-      <button id="deleteDriveBtn" class="danger">Delete stored drive</button>
-    </section>
-
-    <section id="diagnostics" class="overlay">
-      <div class="overlay-head">
-        <div><div class="eyebrow">DIAGNOSTICS</div><h2>Data sources</h2></div>
-        <button id="closeDiag" class="small secondary">Done</button>
-      </div>
-      <div class="card">
-        <b>Priority order</b>
-        <ol>
-          <li>Your verified correction</li>
-          <li>Spartanburg County SpeedLimit</li>
-          <li>SCDOT regulatory speed-limit layer</li>
-          <li>ESP32 future input</li>
-          <li>OpenStreetMap mapped maxspeed</li>
-          <li>~35 estimated unknown</li>
-        </ol>
-      </div>
-      <div id="diagBody" class="card mono">No drive started yet.</div>
-      <button id="clearCachesBtn" class="secondary">Refresh road-data cache</button>
-    </section>
+    <p class="note">Posted road signs control. Digital speed-limit data can be missing, delayed, or outdated.</p>
   </main>
 </body>
 </html>
